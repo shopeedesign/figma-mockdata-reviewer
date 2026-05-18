@@ -132,6 +132,73 @@ node.characters = update.newText;
 
 替换完成后，调用 `get_screenshot` 对修改区域截图，并向用户展示结果摘要。结果格式见下方「输出要求」。
 
+### 阶段 6：追问是否添加改动标记
+
+替换完成并给出结果摘要后，必须继续追问用户是否要把改动位置标出来。
+
+推荐话术：
+
+```text
+是否需要我把这次改动到的位置标上小红点？
+
+选项：
+A. 是，标出来
+B. 否，不需要
+```
+
+若用户选择 `A`，则继续执行阶段 7。
+若用户选择 `B`，则本次流程结束。
+
+### 阶段 7：在 Figma 中标记改动点
+
+若用户确认需要标记，则加载 `figma-use` skill，在本次发生文字替换的同一个 frame 中，为每个改动文本节点添加一个小红点。
+
+要求如下：
+
+- 红点仅用于标示“本次改动过的点”，不需要编号。
+- 红点应尽量贴近被改动文本，避免遮挡正文。
+- 所有红点必须放入独立分组：`__codex_mockdata_change_markers`
+- 若页面中已存在同名分组，可先删除再重建，避免重复。
+- 不要改动用户原有图层结构，除新增红点分组外不做额外视觉修改。
+
+可参考实现：
+
+```js
+const targetIds = ['32:189', '32:208']; // 由本次替换结果带入
+const root = await figma.getNodeByIdAsync('32:95'); // 由当前处理 frame 带入
+const page = root.parent;
+
+for (const child of [...page.children]) {
+  if (child.name === '__codex_mockdata_change_markers') child.remove();
+}
+
+const markerNodes = [];
+const createdNodeIds = [];
+
+for (const id of targetIds) {
+  const node = await figma.getNodeByIdAsync(id);
+  if (!node) continue;
+
+  const [, , x] = node.absoluteTransform[0];
+  const [, , y] = node.absoluteTransform[1];
+
+  const dot = figma.createEllipse();
+  dot.resize(8, 8);
+  dot.x = x - 14;
+  dot.y = y + 4;
+  dot.fills = [{ type: 'SOLID', color: { r: 0.95, g: 0.2, b: 0.2 } }];
+  dot.strokes = [];
+
+  markerNodes.push(dot);
+  createdNodeIds.push(dot.id);
+}
+
+const group = figma.group(markerNodes, page);
+group.name = '__codex_mockdata_change_markers';
+
+return { createdNodeIds: [group.id, ...createdNodeIds] };
+```
+
 ## 输出要求
 
 ### 建议列表格式
@@ -180,6 +247,8 @@ D. 不执行，仅供参考
 
 截图已更新，请在 Figma 中查看效果。
 ```
+
+在这段结果摘要之后，必须继续追问用户是否要标小红点，除非本轮用户已明确表示不需要。
 
 ## 示例输出
 
